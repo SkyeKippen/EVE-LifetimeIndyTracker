@@ -1,0 +1,63 @@
+{{define "head"}}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MWHI Lifetime Indy Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="stylesheet" href="/static/style.css">
+{{end}}
+
+{{define "header"}}
+<header class="banner">
+    <div class="banner-inner">
+        <a class="brand" href="/">MWHI Lifetime Indy Tracker</a>
+        <span class="banner-tagline">Powered by MWHI Servers</span>
+        <nav>
+            <a href="/"{{if eq . "home"}} class="active"{{end}}>Home</a>
+            <a href="/mining"{{if eq . "mining"}} class="active"{{end}}>Mining</a>
+            <a href="/characters"{{if eq . "characters"}} class="active"{{end}}>Characters</a>
+        </nav>
+    </div>
+</header>
+{{end}}
+
+{{/* scope-picker is the EVE sign-in form with a switch per optional scope,
+     laid out in a grid. Its data has ScopeChoices, a list of auth.ScopeChoice,
+     and AddAlt, which adds the character to the signed-in user instead of
+     starting a new session;
+     hovering a switch shows the ESI scope it grants. */}}
+{{define "scope-picker"}}
+        <form action="/auth/login" method="get">
+            <input type="hidden" name="scopes_chosen" value="1">
+            {{if .AddAlt}}<input type="hidden" name="add_alt" value="1">{{end}}
+            <h3>Permissions to grant</h3>
+            <p class="muted">Untick anything you don't want this site to read. You can sign in again later to change it.</p>
+
+            <div>
+                <input type="checkbox" id="scope-required" class="switch-input" checked disabled>
+                <label class="switch-row" for="scope-required">
+                    <span class="switch"></span>
+                    <span><strong>Public character info</strong> <span class="muted">(always required)</span></span>
+                </label>
+            </div>
+            <div class="scope-grid">
+            {{range $i, $choice := .ScopeChoices}}
+                <div>
+                    <input type="checkbox" id="scope-{{$i}}" class="switch-input" name="scope" value="{{$choice.Scope}}" checked>
+                    <label class="switch-row" for="scope-{{$i}}" title="{{$choice.Scope}}">
+                        <span class="switch"></span>
+                        <span><strong>{{$choice.Label}}</strong>
+                            {{- if $choice.Description}} <span class="muted">{{$choice.Description}}</span>{{end}}
+                            {{- if $choice.Note}}<span class="scope-note">{{$choice.Note}}</span>{{end}}</span>
+                    </label>
+                </div>
+            {{end}}
+            </div>
+
+            <input class="sso-login" type="image"
+                   src="https://web.ccpgamescdn.com/eveonlineassets/developers/eve-sso-login-black-small.png"
+                   alt="Log in with EVE Online" width="195" height="30">
+        </form>
+{{end}}

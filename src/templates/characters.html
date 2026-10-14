@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head"}}
+</head>
+<body>
+
+{{template "header" "characters"}}
+
+<main class="page">
+    <div class="page-head page-head-split">
+        <h2>My Characters</h2>
+        <span></span>
+        <a class="btn btn-primary" href="/characters/add">Add Alt Character</a>
+    </div>
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Character</th><th>Character ID</th></tr>
+            </thead>
+            <tbody>
+            {{range $i, $character := .Characters}}
+                <tr>
+                    <td>
+                        <strong class="pilot">{{$character.CharacterName}}</strong>
+                        {{if eq $i 0}}<span class="badge badge-main" title="The first character you signed in with">Main</span>{{end}}
+                        {{if eq $character.CharacterID $.CharacterID}}<span class="muted">(signed in)</span>{{end}}
+                    </td>
+                    <td>{{$character.CharacterID}}</td>
+                </tr>
+            {{else}}
+                <tr><td class="empty" colspan="2">No characters are linked to your account.</td></tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</main>
+
+</body>
+</html>

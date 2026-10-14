@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head"}}
+</head>
+<body>
+
+{{template "header" "home"}}
+
+<main class="page">
+    <div class="page-head">
+        <h2>Welcome</h2>
+    </div>
+
+    <section class="card">
+    {{if .LoggedIn}}
+        <p class="muted">Logged in as <strong class="pilot">{{.CharacterName}}</strong></p>
+        <div class="actions">
+            <a class="btn btn-secondary" href="/characters">My Characters</a>
+            <a class="btn btn-secondary" href="/characters/add">Add Alt Character</a>
+            <form action="/auth/logout" method="post">
+                <button class="btn btn-secondary" type="submit">Log out</button>
+            </form>
+        </div>
+    {{else}}
+        <p class="muted">Sign in with your EVE Online character to track your industry.</p>
+        {{template "scope-picker" .}}
+    {{end}}
+    </section>
+</main>
+
+</body>
+</html>

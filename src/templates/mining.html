@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head"}}
+</head>
+<body>
+
+{{template "header" "mining"}}
+
+<main class="page">
+    <div class="page-head">
+        <h2>Mining</h2>
+        <p class="muted">Ore mined by your characters since the tracker started saving their mining ledgers. Graded variants count as their base ore.</p>
+    </div>
+
+    {{range .Characters}}{{if .Problem}}
+    <p class="muted"><strong class="pilot">{{.CharacterName}}</strong> 's latest mining isn't included: {{.Problem}}.</p>
+    {{end}}{{end}}
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Ore</th><th>Includes</th><th class="num">Quantity <span class="unit">units</span></th></tr>
+            </thead>
+            <tbody>
+            {{range .Ores}}
+                <tr>
+                    <td><strong class="pilot">{{.BaseOre}}</strong></td>
+                    <td class="muted">{{range $i, $variant := .Variants}}{{if $i}}, {{end}}{{$variant}}{{end}}</td>
+                    <td class="num">{{commaInt .Quantity}}</td>
+                </tr>
+            {{else}}
+                <tr><td class="empty" colspan="3">No mining saved yet.</td></tr>
+            {{end}}
+            </tbody>
+            {{if .Ores}}
+            <tfoot>
+                <tr><th>Total</th><th></th><th class="num">{{commaInt .GrandTotal}}</th></tr>
+            </tfoot>
+            {{end}}
+        </table>
+    </div>
+</main>
+
+</body>
+</html>
