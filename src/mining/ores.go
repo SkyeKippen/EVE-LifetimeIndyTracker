@@ -12,6 +12,12 @@ type OreTotal struct {
 	BaseOre  string
 	Quantity int64
 	Variants []string // every type mined that counts as this ore, base included
+
+	// Value is what the ore refined into was worth at Jita sell prices on
+	// the days it was mined, leaving out UnpricedQuantity units that
+	// couldn't be valued.
+	Value            float64
+	UnpricedQuantity int64
 }
 
 // gradeSuffix matches the grade EVE puts after a variant ore's name.

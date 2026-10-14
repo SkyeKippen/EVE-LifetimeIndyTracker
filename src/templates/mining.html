@@ -10,17 +10,21 @@
 <main class="page">
     <div class="page-head">
         <h2>Mining</h2>
-        <p class="muted">Ore mined by your characters since the tracker started saving their mining ledgers. Graded variants count as their base ore.</p>
+        <p class="muted">Ore mined by your characters since the tracker started saving their mining ledgers. Graded variants count as their base ore.
+            Value is what the ore refines into (at full yield, with the +5/10/15% bonus for II/III/IV-Grade) at Jita sell prices on the day it was mined, or the closest day with saved prices.</p>
     </div>
 
     {{range .Characters}}{{if .Problem}}
     <p class="muted"><strong class="pilot">{{.CharacterName}}</strong> 's latest mining isn't included: {{.Problem}}.</p>
     {{end}}{{end}}
 
+    {{if .ValueProblem}}<p class="muted">Ore values aren't shown: {{.ValueProblem}}.</p>{{end}}
+    {{if .Unpriced}}<p class="muted">{{commaInt .Unpriced}} units couldn't be valued, because they don't refine (e.g. gas) or a material has no Jita price yet; values marked * leave them out.</p>{{end}}
+
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Ore</th><th>Includes</th><th class="num">Quantity <span class="unit">units</span></th></tr>
+                <tr><th>Ore</th><th>Includes</th><th class="num">Quantity <span class="unit">units</span></th><th class="num">Value <span class="unit">ISK</span></th></tr>
             </thead>
             <tbody>
             {{range .Ores}}
@@ -28,14 +32,15 @@
                     <td><strong class="pilot">{{.BaseOre}}</strong></td>
                     <td class="muted">{{range $i, $variant := .Variants}}{{if $i}}, {{end}}{{$variant}}{{end}}</td>
                     <td class="num">{{commaInt .Quantity}}</td>
+                    <td class="num">{{if $.ValueProblem}}&ndash;{{else if eq .UnpricedQuantity .Quantity}}&ndash;{{else}}{{isk .Value}}{{if .UnpricedQuantity}}*{{end}}{{end}}</td>
                 </tr>
             {{else}}
-                <tr><td class="empty" colspan="3">No mining saved yet.</td></tr>
+                <tr><td class="empty" colspan="4">No mining saved yet.</td></tr>
             {{end}}
             </tbody>
             {{if .Ores}}
             <tfoot>
-                <tr><th>Total</th><th></th><th class="num">{{commaInt .GrandTotal}}</th></tr>
+                <tr><th>Total</th><th></th><th class="num">{{commaInt .GrandTotal}}</th><th class="num">{{if .ValueProblem}}&ndash;{{else}}{{isk .GrandValue}}{{if .Unpriced}}*{{end}}{{end}}</th></tr>
             </tfoot>
             {{end}}
         </table>

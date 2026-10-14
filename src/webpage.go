@@ -4,10 +4,12 @@ import (
 	"LifetimeIndustryTracker/src/auth"
 	"LifetimeIndustryTracker/src/db"
 	"LifetimeIndustryTracker/src/esi"
+	"LifetimeIndustryTracker/src/sde"
 	"context"
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,6 +22,11 @@ import (
 
 func commaInt(n int64) string {
 	return addCommas(fmt.Sprintf("%d", n))
+}
+
+// isk shows an ISK amount rounded to whole ISK, with commas.
+func isk(amount float64) string {
+	return commaInt(int64(math.Round(amount)))
 }
 
 func addCommas(s string) string {
@@ -47,6 +54,7 @@ func addCommas(s string) string {
 var tmpl = template.Must(
 	template.New("").Funcs(template.FuncMap{
 		"commaInt": commaInt,
+		"isk":      isk,
 	}).ParseGlob("src/templates/*.html"),
 )
 
@@ -92,6 +100,10 @@ func main() {
 	http.HandleFunc("/auth/callback", auth.HandleCallback)
 	http.HandleFunc("/auth/logout", handleLogout)
 
+	// the Mining page values ore by what it refines into, which only the
+	// SDE knows
+	sde.LoadInBackground()
+
 	// ESI only remembers 30 to 90 days and caches most routes for an hour,
 	// so saving everything hourly keeps the full history
 	refresher.SSO = auth.Config()
@@ -99,7 +111,7 @@ func main() {
 
 	port := os.Getenv("SERVER_PORT")
 	if port == "" {
-		port = "5002"
+		port = "5003"
 	}
 
 	log.Printf("Server listening on port %s", port)

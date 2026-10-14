@@ -55,7 +55,8 @@ func (r *Refresher) Every(interval time.Duration) {
 }
 
 // All refreshes every character with a saved token, then each of their
-// corporations once.
+// corporations once, then today's Jita prices of what mined ore refines
+// into.
 func (r *Refresher) All(ctx context.Context) {
 	characters, err := db.ListTokenCharacters(ctx)
 	if err != nil {
@@ -76,6 +77,9 @@ func (r *Refresher) All(ctx context.Context) {
 	}
 	for corporationID, members := range corporations {
 		r.logErrors(fmt.Sprintf("corporation %d", corporationID), r.Corporation(ctx, corporationID, members))
+	}
+	if err := r.saveOrePrices(ctx); err != nil {
+		log.Printf("refresh: Jita prices of refined ore: %v", err)
 	}
 }
 

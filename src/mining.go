@@ -6,6 +6,7 @@ import (
 	"LifetimeIndustryTracker/src/esi"
 	"LifetimeIndustryTracker/src/mining"
 	"LifetimeIndustryTracker/src/refresh"
+	"LifetimeIndustryTracker/src/sde"
 	"context"
 	"errors"
 	"log"
@@ -76,9 +77,14 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not load saved mining: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var grandTotal int64
+	valueProblem := addOreValues(ctx, ores, characterIDs)
+
+	var grandTotal, unpriced int64
+	var grandValue float64
 	for _, ore := range ores {
 		grandTotal += ore.Quantity
+		grandValue += ore.Value
+		unpriced += ore.UnpricedQuantity
 	}
 
 	data := struct {
@@ -86,13 +92,51 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 		Characters    []MiningCharacter
 		Ores          []mining.OreTotal
 		GrandTotal    int64
-	}{CharacterName: sess.CharacterName, Characters: characters, Ores: ores, GrandTotal: grandTotal}
+		GrandValue    float64
+		Unpriced      int64
+		ValueProblem  string
+	}{CharacterName: sess.CharacterName, Characters: characters, Ores: ores, GrandTotal: grandTotal,
+		GrandValue: grandValue, Unpriced: unpriced, ValueProblem: valueProblem}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err = tmpl.ExecuteTemplate(w, "mining.html", data)
 	if err != nil {
 		log.Printf("renderMining: %v", err)
 	}
+}
+
+// addOreValues values each ore at the Jita sell prices of what it refines
+// into on the days it was mined, saving today's prices first if the hourly
+// refresh hasn't yet. It returns why the values are missing, or "".
+func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []int64) string {
+	days, err := db.LoadMinedDays(ctx, characterIDs)
+	if err != nil {
+		log.Printf("renderMining: loading mining by day: %v", err)
+		return "the saved mining couldn't be read by day"
+	}
+	oreTypes := map[int64]string{}
+	for _, day := range days {
+		oreTypes[day.TypeID] = day.OreType
+	}
+	recipes, err := refresher.OreRecipes(ctx, oreTypes)
+	if errors.Is(err, sde.ErrNotLoaded) {
+		return "the refine materials are still loading from EVE's static data, so check back in a few minutes"
+	}
+	if err != nil {
+		log.Printf("renderMining: refine recipes: %v", err)
+		return "the refine materials couldn't be loaded"
+	}
+	materialIDs := refresh.MaterialIDs(recipes)
+	if err := refresher.SaveJitaPrices(ctx, materialIDs, true); err != nil {
+		log.Printf("renderMining: today's Jita prices: %v", err)
+	}
+	book, err := db.LoadJitaSellPrices(ctx, materialIDs)
+	if err != nil {
+		log.Printf("renderMining: loading Jita prices: %v", err)
+		return "the saved Jita prices couldn't be read"
+	}
+	mining.AddValues(ores, days, recipes, book)
+	return ""
 }
 
 // miningProblem says, for the page, why a character's latest mining is
