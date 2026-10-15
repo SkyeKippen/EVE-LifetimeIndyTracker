@@ -119,3 +119,17 @@ func AddValues(totals []OreTotal, days []MinedDay, recipes map[int64]Recipe, boo
 		}
 	}
 }
+
+// AddVolumes sets each total's Volume to the m3 mined, each ore type at its
+// own volume per unit. An ore type with no known volume adds nothing.
+func AddVolumes(totals []OreTotal, days []MinedDay, volumes map[int64]float64) {
+	index := make(map[string]int, len(totals))
+	for i, total := range totals {
+		index[total.BaseOre] = i
+	}
+	for _, day := range days {
+		if i, ok := index[day.BaseOre]; ok {
+			totals[i].Volume += volumes[day.TypeID] * float64(day.Quantity)
+		}
+	}
+}

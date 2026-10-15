@@ -77,14 +77,15 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not load saved mining: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	valueProblem := addOreValues(ctx, ores, characterIDs)
+	valueProblem, volumesErr := addOreValues(ctx, ores, characterIDs)
 
 	var grandTotal, unpriced int64
-	var grandValue float64
+	var grandValue, grandVolume float64
 	for _, ore := range ores {
 		grandTotal += ore.Quantity
 		grandValue += ore.Value
 		unpriced += ore.UnpricedQuantity
+		grandVolume += ore.Volume
 	}
 
 	data := struct {
@@ -93,10 +94,13 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 		Ores          []mining.OreTotal
 		GrandTotal    int64
 		GrandValue    float64
+		GrandVolume   float64
 		Unpriced      int64
 		ValueProblem  string
+		HasVolumes    bool
 	}{CharacterName: sess.CharacterName, Characters: characters, Ores: ores, GrandTotal: grandTotal,
-		GrandValue: grandValue, Unpriced: unpriced, ValueProblem: valueProblem}
+		GrandValue: grandValue, GrandVolume: grandVolume, Unpriced: unpriced, ValueProblem: valueProblem,
+		HasVolumes: volumesErr == nil}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err = tmpl.ExecuteTemplate(w, "mining.html", data)
@@ -107,24 +111,31 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 
 // addOreValues values each ore at the Jita sell prices of what it refines
 // into on the days it was mined, saving today's prices first if the hourly
-// refresh hasn't yet. It returns why the values are missing, or "".
-func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []int64) string {
+// refresh hasn't yet, and adds up the m3 mined. It returns why the values
+// are missing, or "", and why the volumes are, or nil.
+func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []int64) (string, error) {
 	days, err := db.LoadMinedDays(ctx, characterIDs)
 	if err != nil {
 		log.Printf("renderMining: loading mining by day: %v", err)
-		return "the saved mining couldn't be read by day"
+		return "the saved mining couldn't be read by day", err
 	}
+
+	volumes, volumesErr := sde.Volumes()
+	if volumesErr == nil {
+		mining.AddVolumes(ores, days, volumes)
+	}
+
 	oreTypes := map[int64]string{}
 	for _, day := range days {
 		oreTypes[day.TypeID] = day.OreType
 	}
 	recipes, err := refresher.OreRecipes(ctx, oreTypes)
 	if errors.Is(err, sde.ErrNotLoaded) {
-		return "the refine materials are still loading from EVE's static data, so check back in a few minutes"
+		return "the refine materials are still loading from EVE's static data, so check back in a few minutes", volumesErr
 	}
 	if err != nil {
 		log.Printf("renderMining: refine recipes: %v", err)
-		return "the refine materials couldn't be loaded"
+		return "the refine materials couldn't be loaded", volumesErr
 	}
 	materialIDs := refresh.MaterialIDs(recipes)
 	if err := refresher.SaveJitaPrices(ctx, materialIDs, true); err != nil {
@@ -133,10 +144,10 @@ func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []in
 	book, err := db.LoadJitaSellPrices(ctx, materialIDs)
 	if err != nil {
 		log.Printf("renderMining: loading Jita prices: %v", err)
-		return "the saved Jita prices couldn't be read"
+		return "the saved Jita prices couldn't be read", volumesErr
 	}
 	mining.AddValues(ores, days, recipes, book)
-	return ""
+	return "", volumesErr
 }
 
 // miningProblem says, for the page, why a character's latest mining is

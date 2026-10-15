@@ -16,3 +16,15 @@ func TestParseTypeMaterials(t *testing.T) {
 		t.Errorf("got %v", got)
 	}
 }
+
+func TestParseVolumes(t *testing.T) {
+	got, err := ParseVolumes(strings.NewReader(
+		`{"_key":1230,"name":{"en":"Veldspar"},"volume":0.1,"portionSize":100}` + "\n" +
+			`{"_key":28432,"volume":0.001}` + "\n" + `{"_key":5}` + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1230] != 0.1 || got[28432] != 0.001 {
+		t.Errorf("got %v", got)
+	}
+}

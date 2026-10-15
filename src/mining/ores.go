@@ -18,6 +18,9 @@ type OreTotal struct {
 	// couldn't be valued.
 	Value            float64
 	UnpricedQuantity int64
+
+	// Volume is how many m3 were mined, each variant at its own volume.
+	Volume float64
 }
 
 // gradeSuffix matches the grade EVE puts after a variant ore's name.

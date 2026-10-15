@@ -56,3 +56,15 @@ func TestAddValues(t *testing.T) {
 		t.Errorf("gas = %v (%d unpriced), want 0 and 50 unpriced", totals[1].Value, totals[1].UnpricedQuantity)
 	}
 }
+
+func TestAddVolumes(t *testing.T) {
+	totals := []OreTotal{{BaseOre: "Veldspar"}, {BaseOre: "Blue Ice"}}
+	AddVolumes(totals, []MinedDay{
+		{TypeID: 1230, BaseOre: "Veldspar", Date: day(1), Quantity: 1000},
+		{TypeID: 17470, BaseOre: "Veldspar", Date: day(2), Quantity: 500},
+		{TypeID: 16264, BaseOre: "Blue Ice", Date: day(2), Quantity: 3},
+	}, map[int64]float64{1230: 0.1, 17470: 0.1, 16264: 1000})
+	if math.Abs(totals[0].Volume-150) > 1e-9 || totals[1].Volume != 3000 {
+		t.Errorf("volumes = %v, %v; want 150, 3000", totals[0].Volume, totals[1].Volume)
+	}
+}

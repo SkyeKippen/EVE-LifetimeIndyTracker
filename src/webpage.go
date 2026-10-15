@@ -24,7 +24,8 @@ func commaInt(n int64) string {
 	return addCommas(fmt.Sprintf("%d", n))
 }
 
-// isk shows an ISK amount rounded to whole ISK, with commas.
+// isk shows an amount, such as ISK or m3, rounded to a whole number, with
+// commas.
 func isk(amount float64) string {
 	return commaInt(int64(math.Round(amount)))
 }
@@ -55,6 +56,7 @@ var tmpl = template.Must(
 	template.New("").Funcs(template.FuncMap{
 		"commaInt": commaInt,
 		"isk":      isk,
+		"m3":       isk,
 	}).ParseGlob("src/templates/*.html"),
 )
 
