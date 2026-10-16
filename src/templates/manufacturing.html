@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+{{template "head"}}
+</head>
+<body>
+
+{{template "header" "manufacturing"}}
+
+<main class="page">
+    <div class="page-head">
+        <h2>Manufacturing</h2>
+        <p class="muted">Everything your characters have manufactured or reacted and delivered since the tracker started saving their industry jobs (ESI only goes back 90 days).
+            Value is each job's items at the Jita sell price on the day it was delivered, or the closest day with a saved price. Click a heading to sort.</p>
+    </div>
+
+    {{range .Characters}}{{if .Problem}}
+    <p class="muted"><strong class="pilot">{{.CharacterName}}</strong>'s latest jobs aren't included: {{.Problem}}.</p>
+    {{end}}{{end}}
+    {{if .RecordProblem}}<p class="muted">Jobs delivered since the last refresh may be missing: {{.RecordProblem}}.</p>{{end}}
+    {{if .Unpriced}}<p class="muted">{{commaInt .Unpriced}} items have no Jita sell price yet; values marked * leave them out.</p>{{end}}
+
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>{{range .Columns}}<th{{if .Numeric}} class="num"{{end}}><a class="sort-link" href="{{.Href}}">{{.Label}}{{if .Unit}} <span class="unit">{{.Unit}}</span>{{end}}{{if .Arrow}} {{.Arrow}}{{end}}</a></th>{{end}}</tr>
+            </thead>
+            <tbody>
+            {{range .Items}}
+                <tr>
+                    <td><strong class="pilot">{{.Name}}</strong></td>
+                    <td>{{if .Group}}{{.Group}} <span class="muted">{{.Category}}</span>{{else}}<span class="muted">&ndash;</span>{{end}}</td>
+                    <td class="num">{{commaInt .Quantity}}</td>
+                    <td class="num">{{if eq .UnpricedQuantity .Quantity}}&ndash;{{else}}{{isk .Value}}{{if .UnpricedQuantity}}*{{end}}{{end}}</td>
+                </tr>
+            {{else}}
+                <tr><td class="empty" colspan="4">No delivered manufacturing saved yet.</td></tr>
+            {{end}}
+            </tbody>
+            {{if .Items}}
+            <tfoot>
+                <tr><th>Total</th><th></th><th class="num">{{commaInt .GrandQuantity}}</th><th class="num">{{isk .GrandValue}}{{if .Unpriced}}*{{end}}</th></tr>
+            </tfoot>
+            {{end}}
+        </table>
+    </div>
+</main>
+
+</body>
+</html>
