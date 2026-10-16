@@ -1,7 +1,8 @@
-// Package sde reads what each item refines into and each item's volume from
-// EVE's static data export (SDE). ESI has no route for refine materials, so
-// the app keeps the SDE's typeMaterials.jsonl and types.jsonl in data/sde,
-// downloading them from CCP the first time either is missing.
+// Package sde reads what each item refines into, each item's volume, group
+// and category, and what each blueprint makes from EVE's static data export
+// (SDE). ESI has no refine materials or blueprint outputs, so the app keeps
+// the SDE files it needs in data/sde, downloading them from CCP the first
+// time any is missing.
 package sde
 
 import (
@@ -27,6 +28,9 @@ import (
 const (
 	TypeMaterialsPath = "data/sde/typeMaterials.jsonl"
 	TypesPath         = "data/sde/types.jsonl"
+	BlueprintsPath    = "data/sde/blueprints.jsonl"
+	GroupsPath        = "data/sde/groups.jsonl"
+	CategoriesPath    = "data/sde/categories.jsonl"
 )
 
 // defaultSdeURL is CCP's latest SDE in JSON Lines; SDE_URL in config/.env
@@ -43,11 +47,34 @@ type Material struct {
 	Quantity int64
 }
 
+// Blueprint is what one run of a blueprint makes: product type ID to
+// quantity, for manufacturing and for reactions.
+type Blueprint struct {
+	Manufacturing map[int64]int64
+	Reaction      map[int64]int64
+}
+
+// Group is an item group, e.g. Fuel Block, and the category it's in, e.g.
+// Material.
+type Group struct {
+	Name       string
+	CategoryID int64
+}
+
+// sdeData is everything read from the SDE files.
+type sdeData struct {
+	materials  map[int64][]Material
+	volumes    map[int64]float64
+	typeGroups map[int64]int64 // type ID to group ID
+	blueprints map[int64]Blueprint
+	groups     map[int64]Group
+	categories map[int64]string
+}
+
 var (
-	mu        sync.Mutex
-	materials map[int64][]Material
-	volumes   map[int64]float64
-	loadErr   error = ErrNotLoaded
+	mu      sync.Mutex
+	loaded  sdeData
+	loadErr error = ErrNotLoaded
 )
 
 // Materials returns what each type refines into, per portion, keyed by type
@@ -55,7 +82,7 @@ var (
 func Materials() (map[int64][]Material, error) {
 	mu.Lock()
 	defer mu.Unlock()
-	return materials, loadErr
+	return loaded.materials, loadErr
 }
 
 // Volumes returns the volume of one unit of each type in m3, keyed by type
@@ -63,7 +90,32 @@ func Materials() (map[int64][]Material, error) {
 func Volumes() (map[int64]float64, error) {
 	mu.Lock()
 	defer mu.Unlock()
-	return volumes, loadErr
+	return loaded.volumes, loadErr
+}
+
+// ItemType returns the category and group of a type, e.g. "Module" and
+// "Missile Launcher Light", and false when the SDE doesn't know it or isn't
+// loaded.
+func ItemType(typeID int64) (category, group string, ok bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	groupID, ok := loaded.typeGroups[typeID]
+	if !ok {
+		return "", "", false
+	}
+	g, ok := loaded.groups[groupID]
+	if !ok {
+		return "", "", false
+	}
+	return loaded.categories[g.CategoryID], g.Name, true
+}
+
+// Blueprints returns what one run of each blueprint makes, keyed by the
+// blueprint's type ID.
+func Blueprints() (map[int64]Blueprint, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	return loaded.blueprints, loadErr
 }
 
 // LoadInBackground reads the SDE files, downloading the SDE first when
@@ -85,7 +137,7 @@ func LoadInBackground() {
 
 func load(ctx context.Context) error {
 	var missing []string
-	for _, dest := range []string{TypeMaterialsPath, TypesPath} {
+	for _, dest := range []string{TypeMaterialsPath, TypesPath, BlueprintsPath, GroupsPath, CategoriesPath} {
 		if _, err := os.Stat(dest); errors.Is(err, os.ErrNotExist) {
 			missing = append(missing, dest)
 		}
@@ -98,23 +150,45 @@ func load(ctx context.Context) error {
 		log.Printf("sde: %v missing, downloading the SDE from %s", missing, url)
 		if err := download(ctx, url, missing); err != nil {
 			err = fmt.Errorf("downloading the SDE: %w", err)
-			setLoaded(nil, nil, err)
+			setLoaded(sdeData{}, err)
 			return err
 		}
 	}
 
-	loadedMaterials, err := parseFile(TypeMaterialsPath, ParseTypeMaterials)
-	if err != nil {
-		setLoaded(nil, nil, err)
+	var data sdeData
+	var err error
+	if data.materials, err = parseFile(TypeMaterialsPath, ParseTypeMaterials); err != nil {
+		setLoaded(sdeData{}, err)
 		return err
 	}
-	loadedVolumes, err := parseFile(TypesPath, ParseVolumes)
+	types, err := parseFile(TypesPath, ParseTypes)
 	if err != nil {
-		setLoaded(nil, nil, err)
+		setLoaded(sdeData{}, err)
 		return err
 	}
-	log.Printf("sde: loaded refine materials for %d types and volumes for %d", len(loadedMaterials), len(loadedVolumes))
-	setLoaded(loadedMaterials, loadedVolumes, nil)
+	data.volumes = make(map[int64]float64, len(types))
+	data.typeGroups = make(map[int64]int64, len(types))
+	for typeID, info := range types {
+		if info.Volume != nil {
+			data.volumes[typeID] = *info.Volume
+		}
+		data.typeGroups[typeID] = info.GroupID
+	}
+	if data.blueprints, err = parseFile(BlueprintsPath, ParseBlueprints); err != nil {
+		setLoaded(sdeData{}, err)
+		return err
+	}
+	if data.groups, err = parseFile(GroupsPath, ParseGroups); err != nil {
+		setLoaded(sdeData{}, err)
+		return err
+	}
+	if data.categories, err = parseFile(CategoriesPath, ParseCategories); err != nil {
+		setLoaded(sdeData{}, err)
+		return err
+	}
+	log.Printf("sde: loaded %d types, refine materials for %d and %d blueprints",
+		len(types), len(data.materials), len(data.blueprints))
+	setLoaded(data, nil)
 	return nil
 }
 
@@ -133,13 +207,13 @@ func parseFile[T any](name string, parse func(io.Reader) (T, error)) (T, error) 
 }
 
 // setLoaded keeps what was loaded before when a later load fails.
-func setLoaded(loadedMaterials map[int64][]Material, loadedVolumes map[int64]float64, err error) {
+func setLoaded(data sdeData, err error) {
 	mu.Lock()
 	defer mu.Unlock()
 	if err == nil {
-		materials, volumes = loadedMaterials, loadedVolumes
+		loaded = data
 	}
-	if materials == nil || err == nil {
+	if loaded.materials == nil || err == nil {
 		loadErr = err
 	}
 }
@@ -177,10 +251,115 @@ func ParseTypeMaterials(r io.Reader) (map[int64][]Material, error) {
 	return loaded, nil
 }
 
-// ParseVolumes reads each type's volume from the SDE's types.jsonl: one
-// line per type, {"_key": typeID, "volume": m3, ...}.
-func ParseVolumes(r io.Reader) (map[int64]float64, error) {
-	loaded := map[int64]float64{}
+// TypeInfo is what the app uses from a type in the SDE.
+type TypeInfo struct {
+	Volume  *float64 // m3 per unit; nil when the SDE gives none
+	GroupID int64
+}
+
+// ParseTypes reads each type's volume and group from the SDE's types.jsonl:
+// one line per type, {"_key": typeID, "groupID": ..., "volume": m3, ...}.
+func ParseTypes(r io.Reader) (map[int64]TypeInfo, error) {
+	loaded := map[int64]TypeInfo{}
+	err := eachLine(r, func(line []byte) error {
+		var entry struct {
+			Key     int64    `json:"_key"`
+			GroupID int64    `json:"groupID"`
+			Volume  *float64 `json:"volume"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			return err
+		}
+		loaded[entry.Key] = TypeInfo{Volume: entry.Volume, GroupID: entry.GroupID}
+		return nil
+	})
+	if err == nil && len(loaded) == 0 {
+		err = errors.New("no types found")
+	}
+	return loaded, err
+}
+
+// ParseGroups reads the SDE's groups.jsonl: one line per group,
+// {"_key": groupID, "categoryID": ..., "name": {"en": ...}}.
+func ParseGroups(r io.Reader) (map[int64]Group, error) {
+	loaded := map[int64]Group{}
+	err := eachLine(r, func(line []byte) error {
+		var entry struct {
+			Key        int64             `json:"_key"`
+			CategoryID int64             `json:"categoryID"`
+			Name       map[string]string `json:"name"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			return err
+		}
+		loaded[entry.Key] = Group{Name: entry.Name["en"], CategoryID: entry.CategoryID}
+		return nil
+	})
+	if err == nil && len(loaded) == 0 {
+		err = errors.New("no groups found")
+	}
+	return loaded, err
+}
+
+// ParseCategories reads the SDE's categories.jsonl: one line per category,
+// {"_key": categoryID, "name": {"en": ...}}.
+func ParseCategories(r io.Reader) (map[int64]string, error) {
+	loaded := map[int64]string{}
+	err := eachLine(r, func(line []byte) error {
+		var entry struct {
+			Key  int64             `json:"_key"`
+			Name map[string]string `json:"name"`
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			return err
+		}
+		loaded[entry.Key] = entry.Name["en"]
+		return nil
+	})
+	if err == nil && len(loaded) == 0 {
+		err = errors.New("no categories found")
+	}
+	return loaded, err
+}
+
+// eachLine calls handle with every non-blank line of a JSON Lines file.
+func eachLine(r io.Reader, handle func(line []byte) error) error {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for line := 1; scanner.Scan(); line++ {
+		if len(scanner.Bytes()) == 0 {
+			continue
+		}
+		if err := handle(scanner.Bytes()); err != nil {
+			return fmt.Errorf("line %d: %w", line, err)
+		}
+	}
+	return scanner.Err()
+}
+
+// ParseBlueprints reads what one run of each blueprint makes from the
+// SDE's blueprints.jsonl: one line per blueprint, {"_key": typeID,
+// "activities": {"manufacturing": {"products": [{"typeID": ...,
+// "quantity": ...}]}, "reaction": {...}}}.
+func ParseBlueprints(r io.Reader) (map[int64]Blueprint, error) {
+	type activity struct {
+		Products []struct {
+			TypeID   int64 `json:"typeID"`
+			Quantity int64 `json:"quantity"`
+		} `json:"products"`
+	}
+	products := func(a *activity) map[int64]int64 {
+		if a == nil || len(a.Products) == 0 {
+			return nil
+		}
+		out := make(map[int64]int64, len(a.Products))
+		for _, product := range a.Products {
+			out[product.TypeID] = product.Quantity
+		}
+		return out
+	}
+
+	loaded := map[int64]Blueprint{}
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 	for line := 1; scanner.Scan(); line++ {
@@ -188,21 +367,25 @@ func ParseVolumes(r io.Reader) (map[int64]float64, error) {
 			continue
 		}
 		var entry struct {
-			Key    int64    `json:"_key"`
-			Volume *float64 `json:"volume"`
+			Key        int64 `json:"_key"`
+			Activities struct {
+				Manufacturing *activity `json:"manufacturing"`
+				Reaction      *activity `json:"reaction"`
+			} `json:"activities"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			return nil, fmt.Errorf("line %d: %w", line, err)
 		}
-		if entry.Volume != nil {
-			loaded[entry.Key] = *entry.Volume
+		blueprint := Blueprint{Manufacturing: products(entry.Activities.Manufacturing), Reaction: products(entry.Activities.Reaction)}
+		if blueprint.Manufacturing != nil || blueprint.Reaction != nil {
+			loaded[entry.Key] = blueprint
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
 	if len(loaded) == 0 {
-		return nil, errors.New("no volumes found")
+		return nil, errors.New("no blueprints found")
 	}
 	return loaded, nil
 }

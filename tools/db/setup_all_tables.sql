@@ -11,6 +11,7 @@
 \ir generate_market_orders_table.sql
 \ir generate_assets_table.sql
 \ir generate_industry_jobs_table.sql
+\ir generate_delivered_jobs_table.sql
 \ir generate_mining_ledger_table.sql
 \ir generate_corp_mining_ledger_table.sql
 \ir generate_jita_sell_prices_table.sql

@@ -1,6 +1,6 @@
 -- Stores the Jita sell price of each refined material (minerals, moon
--- materials, ice products) once a day, so mined ore can be valued at the
--- prices of the day it was mined. The price is the lowest sell order at
+-- materials, ice products) and each manufactured item once a day, so mined
+-- ore and delivered jobs can be valued at the prices of their day. The price is the lowest sell order at
 -- Jita IV - Moon 4 - Caldari Navy Assembly Plant, from ESI's public region
 -- orders. ESI has no sell price history, so prices start the day the app
 -- first saves them; days before that use the closest day saved.

@@ -97,6 +97,7 @@ func main() {
 	http.HandleFunc("/characters", auth.RequireAuth(renderCharacters))
 	http.HandleFunc("/characters/add", auth.RequireAuth(renderAddAltCharacter))
 	http.HandleFunc("/mining", auth.RequireAuth(renderMining))
+	http.HandleFunc("/manufacturing", auth.RequireAuth(renderManufacturing))
 
 	http.HandleFunc("/auth/login", auth.HandleLogin)
 	http.HandleFunc("/auth/callback", auth.HandleCallback)

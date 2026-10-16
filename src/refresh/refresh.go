@@ -56,7 +56,7 @@ func (r *Refresher) Every(interval time.Duration) {
 
 // All refreshes every character with a saved token, then each of their
 // corporations once, then today's Jita prices of what mined ore refines
-// into.
+// into, then records newly delivered manufacturing and reaction jobs.
 func (r *Refresher) All(ctx context.Context) {
 	characters, err := db.ListTokenCharacters(ctx)
 	if err != nil {
@@ -81,6 +81,9 @@ func (r *Refresher) All(ctx context.Context) {
 	if err := r.saveOrePrices(ctx); err != nil {
 		log.Printf("refresh: Jita prices of refined ore: %v", err)
 	}
+	if err := r.RecordDeliveries(ctx); err != nil {
+		log.Printf("refresh: delivered industry jobs: %v", err)
+	}
 }
 
 // InBackground refreshes one character and their corporation without holding
@@ -101,6 +104,9 @@ func (r *Refresher) InBackground(characterID int64) {
 			return
 		}
 		r.logErrors(fmt.Sprintf("corporation %d", info.CorporationId), r.Corporation(ctx, info.CorporationId, []db.TokenCharacter{character}))
+		if err := r.RecordDeliveries(ctx); err != nil {
+			log.Printf("refresh: delivered industry jobs: %v", err)
+		}
 	}()
 }
 
@@ -195,6 +201,23 @@ func (r *Refresher) CharacterMining(ctx context.Context, character db.TokenChara
 		return err
 	}
 	return r.saveCharacterMining(ctx, character, accessToken)
+}
+
+// CharacterJobs saves just the character's industry jobs, for the
+// Manufacturing page to include jobs delivered since the last refresh.
+func (r *Refresher) CharacterJobs(ctx context.Context, character db.TokenCharacter) error {
+	if !character.HasScope(ScopeCharacterJobs) {
+		return ErrMissingScope
+	}
+	accessToken, err := db.GetAccessToken(ctx, r.SSO, character.CharacterID)
+	if err != nil {
+		return err
+	}
+	jobs, err := r.ESI.GetCharacterIndustryJobs(ctx, character.CharacterID, accessToken)
+	if err != nil {
+		return err
+	}
+	return db.SaveIndustryJobs(ctx, character.CharacterID, db.OwnerCharacter, jobs)
 }
 
 // Corporation saves the corporation's data using whichever of members has

@@ -282,6 +282,13 @@ tbody tr:last-child td { border-bottom: none; }
 
 th.num, td.num { text-align: right; }
 
+/* Sortable column headings look like the plain ones */
+th a.sort-link {
+    color: inherit;
+    text-decoration: none;
+}
+th a.sort-link:hover { text-decoration: underline; }
+
 .unit {
     color: var(--muted);
     font-size: 12px;
