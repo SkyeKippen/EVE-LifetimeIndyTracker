@@ -4,10 +4,8 @@ import (
 	"LifetimeIndustryTracker/src/auth"
 	"LifetimeIndustryTracker/src/db"
 	"LifetimeIndustryTracker/src/production"
-	"LifetimeIndustryTracker/src/refresh"
 	"LifetimeIndustryTracker/src/sde"
 	"context"
-	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -28,30 +26,17 @@ func renderManufacturing(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	// save the latest jobs first so the totals include today's deliveries
-	userChars, err := userCharacters(ctx, sess)
+	// jobs are fetched and saved by the hourly refresh; the page only reads
+	// what's saved
+	linked, err := db.ListUserCharacters(ctx, sess.UserID)
 	if err != nil {
 		log.Printf("renderManufacturing: characters of user %d: %v", sess.UserID, err)
 		http.Error(w, "could not load your characters", http.StatusInternalServerError)
 		return
 	}
-	var characterIDs []int64
-	var characters []MiningCharacter
-	for _, character := range userChars {
+	characterIDs := make([]int64, 0, len(linked))
+	for _, character := range linked {
 		characterIDs = append(characterIDs, character.CharacterID)
-		problem := ""
-		if err := refresher.CharacterJobs(ctx, character); err != nil {
-			log.Printf("renderManufacturing: industry jobs of %d (%s): %v", character.CharacterID, character.CharacterName, err)
-			problem = jobsProblem(err)
-		}
-		characters = append(characters, MiningCharacter{CharacterName: character.CharacterName, Problem: problem})
-	}
-	recordProblem := ""
-	if err := refresher.RecordDeliveries(ctx); errors.Is(err, sde.ErrNotLoaded) {
-		recordProblem = "EVE's static data is still loading, so check back in a few minutes"
-	} else if err != nil {
-		log.Printf("renderManufacturing: recording deliveries: %v", err)
-		recordProblem = "they couldn't be added up"
 	}
 
 	// reactions count too, each product (intermediates included) as its own
@@ -81,14 +66,12 @@ func renderManufacturing(w http.ResponseWriter, r *http.Request) {
 
 	data := struct {
 		CharacterName string
-		Characters    []MiningCharacter
-		RecordProblem string
 		Columns       []ManufacturingColumn
 		Items         []production.Item
 		GrandQuantity int64
 		GrandValue    float64
 		Unpriced      int64
-	}{CharacterName: sess.CharacterName, Characters: characters, RecordProblem: recordProblem,
+	}{CharacterName: sess.CharacterName,
 		Columns: manufacturingColumns(sort), Items: items,
 		GrandQuantity: grandQuantity, GrandValue: grandValue, Unpriced: unpriced}
 
@@ -117,19 +100,4 @@ func manufacturingColumns(current production.Sort) []ManufacturingColumn {
 		columns[i].Href = "/manufacturing?sort=" + next.Column + "&dir=" + next.Dir()
 	}
 	return columns
-}
-
-// jobsProblem says, for the page, why a character's latest jobs are
-// missing.
-func jobsProblem(err error) string {
-	switch {
-	case errors.Is(err, refresh.ErrMissingScope):
-		return "didn't grant Character industry jobs at sign-in"
-	case errors.Is(err, db.ErrNoToken):
-		return "needs to sign in again"
-	case errors.Is(err, db.ErrNoDatabase):
-		return "the database isn't set up"
-	default:
-		return "their latest jobs couldn't be fetched or saved"
-	}
 }

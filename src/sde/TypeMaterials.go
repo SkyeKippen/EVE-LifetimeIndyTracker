@@ -65,7 +65,9 @@ type Group struct {
 type sdeData struct {
 	materials  map[int64][]Material
 	volumes    map[int64]float64
-	typeGroups map[int64]int64 // type ID to group ID
+	typeGroups map[int64]int64  // type ID to group ID
+	portions   map[int64]int64  // type ID to units refined at a time
+	typeIDs    map[string]int64 // English name to type ID
 	blueprints map[int64]Blueprint
 	groups     map[int64]Group
 	categories map[int64]string
@@ -108,6 +110,23 @@ func ItemType(typeID int64) (category, group string, ok bool) {
 		return "", "", false
 	}
 	return loaded.categories[g.CategoryID], g.Name, true
+}
+
+// TypeIDByName finds a type by its exact English name, preferring a
+// published type when several share the name.
+func TypeIDByName(name string) (int64, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	typeID, ok := loaded.typeIDs[name]
+	return typeID, ok
+}
+
+// PortionSize returns how many units of a type are refined at a time, e.g.
+// 100 for asteroid ore and 1 for ice.
+func PortionSize(typeID int64) int64 {
+	mu.Lock()
+	defer mu.Unlock()
+	return max(loaded.portions[typeID], 1)
 }
 
 // Blueprints returns what one run of each blueprint makes, keyed by the
@@ -168,11 +187,17 @@ func load(ctx context.Context) error {
 	}
 	data.volumes = make(map[int64]float64, len(types))
 	data.typeGroups = make(map[int64]int64, len(types))
+	data.portions = make(map[int64]int64, len(types))
+	data.typeIDs = make(map[string]int64, len(types))
 	for typeID, info := range types {
 		if info.Volume != nil {
 			data.volumes[typeID] = *info.Volume
 		}
 		data.typeGroups[typeID] = info.GroupID
+		data.portions[typeID] = info.PortionSize
+		if other, taken := data.typeIDs[info.Name]; !taken || (info.Published && !types[other].Published) {
+			data.typeIDs[info.Name] = typeID
+		}
 	}
 	if data.blueprints, err = parseFile(BlueprintsPath, ParseBlueprints); err != nil {
 		setLoaded(sdeData{}, err)
@@ -253,24 +278,32 @@ func ParseTypeMaterials(r io.Reader) (map[int64][]Material, error) {
 
 // TypeInfo is what the app uses from a type in the SDE.
 type TypeInfo struct {
-	Volume  *float64 // m3 per unit; nil when the SDE gives none
-	GroupID int64
+	Name        string   // in English
+	Volume      *float64 // m3 per unit; nil when the SDE gives none
+	GroupID     int64
+	PortionSize int64
+	Published   bool
 }
 
-// ParseTypes reads each type's volume and group from the SDE's types.jsonl:
-// one line per type, {"_key": typeID, "groupID": ..., "volume": m3, ...}.
+// ParseTypes reads each type's name, volume, group and portion size from
+// the SDE's types.jsonl: one line per type, {"_key": typeID, "groupID": ...,
+// "name": {"en": ...}, "portionSize": ..., "published": ..., "volume": m3}.
 func ParseTypes(r io.Reader) (map[int64]TypeInfo, error) {
 	loaded := map[int64]TypeInfo{}
 	err := eachLine(r, func(line []byte) error {
 		var entry struct {
-			Key     int64    `json:"_key"`
-			GroupID int64    `json:"groupID"`
-			Volume  *float64 `json:"volume"`
+			Key         int64             `json:"_key"`
+			GroupID     int64             `json:"groupID"`
+			Name        map[string]string `json:"name"`
+			PortionSize int64             `json:"portionSize"`
+			Published   bool              `json:"published"`
+			Volume      *float64          `json:"volume"`
 		}
 		if err := json.Unmarshal(line, &entry); err != nil {
 			return err
 		}
-		loaded[entry.Key] = TypeInfo{Volume: entry.Volume, GroupID: entry.GroupID}
+		loaded[entry.Key] = TypeInfo{Name: entry.Name["en"], Volume: entry.Volume, GroupID: entry.GroupID,
+			PortionSize: entry.PortionSize, Published: entry.Published}
 		return nil
 	})
 	if err == nil && len(loaded) == 0 {

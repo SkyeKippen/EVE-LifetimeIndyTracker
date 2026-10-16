@@ -51,7 +51,8 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
-	// save the latest mining first so the totals include today
+	// mining is fetched and saved by the hourly refresh; the page only reads
+	// what's saved
 	var characterIDs []int64
 	var characters []MiningCharacter
 	userChars, err := userCharacters(ctx, sess)
@@ -63,10 +64,8 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 	for _, character := range userChars {
 		characterIDs = append(characterIDs, character.CharacterID)
 		problem := ""
-		err := refresher.CharacterMining(ctx, character)
-		if err != nil {
-			log.Printf("renderMining: mining ledger of %d (%s): %v", character.CharacterID, character.CharacterName, err)
-			problem = miningProblem(err)
+		if !character.HasScope(refresh.ScopeCharacterMining) {
+			problem = "they haven't shared their mining ledger, so sign in with them again with Character mining ledger ticked"
 		}
 		characters = append(characters, MiningCharacter{CharacterName: character.CharacterName, Problem: problem})
 	}
@@ -109,9 +108,9 @@ func renderMining(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// addOreValues values each ore at the Jita sell prices of what it refines
-// into on the days it was mined, saving today's prices first if the hourly
-// refresh hasn't yet, and adds up the m3 mined. It returns why the values
+// addOreValues values each ore at the saved Jita sell prices of what it
+// refines into on the days it was mined, and adds up the m3 mined. It reads
+// only the database and the SDE. It returns why the values
 // are missing, or "", and why the volumes are, or nil.
 func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []int64) (string, error) {
 	days, err := db.LoadMinedDays(ctx, characterIDs)
@@ -129,7 +128,7 @@ func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []in
 	for _, day := range days {
 		oreTypes[day.TypeID] = day.OreType
 	}
-	recipes, err := refresher.OreRecipes(ctx, oreTypes)
+	recipes, err := refresh.OreRecipes(oreTypes)
 	if errors.Is(err, sde.ErrNotLoaded) {
 		return "the refine materials are still loading from EVE's static data, so check back in a few minutes", volumesErr
 	}
@@ -138,9 +137,6 @@ func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []in
 		return "the refine materials couldn't be loaded", volumesErr
 	}
 	materialIDs := refresh.MaterialIDs(recipes)
-	if err := refresher.SaveJitaPrices(ctx, materialIDs, true); err != nil {
-		log.Printf("renderMining: today's Jita prices: %v", err)
-	}
 	book, err := db.LoadJitaSellPrices(ctx, materialIDs)
 	if err != nil {
 		log.Printf("renderMining: loading Jita prices: %v", err)
@@ -148,21 +144,4 @@ func addOreValues(ctx context.Context, ores []mining.OreTotal, characterIDs []in
 	}
 	mining.AddValues(ores, days, recipes, book)
 	return "", volumesErr
-}
-
-// miningProblem says, for the page, why a character's latest mining is
-// missing.
-func miningProblem(err error) string {
-	switch {
-	case errors.Is(err, refresh.ErrMissingScope):
-		return "didn't grant Character mining ledger at sign-in"
-	case errors.Is(err, db.ErrNoToken):
-		return "needs to sign in again"
-	case errors.Is(err, db.ErrNoDatabase):
-		return "the database isn't set up"
-	case errors.Is(err, esi.ErrForbidden):
-		return "ESI refused access to the mining ledger"
-	default:
-		return "their latest mining couldn't be fetched or saved"
-	}
 }

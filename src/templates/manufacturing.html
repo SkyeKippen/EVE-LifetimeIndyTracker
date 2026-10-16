@@ -11,13 +11,9 @@
     <div class="page-head">
         <h2>Manufacturing</h2>
         <p class="muted">Everything your characters have manufactured or reacted and delivered since the tracker started saving their industry jobs (ESI only goes back 90 days).
-            Value is each job's items at the Jita sell price on the day it was delivered, or the closest day with a saved price. Click a heading to sort.</p>
+            Value is each job's items at the Jita sell price on the day it was delivered, or the closest day with a saved price. Jobs are saved every hour, so a delivery shows up after the next hourly refresh. Click a heading to sort.</p>
     </div>
 
-    {{range .Characters}}{{if .Problem}}
-    <p class="muted"><strong class="pilot">{{.CharacterName}}</strong>'s latest jobs aren't included: {{.Problem}}.</p>
-    {{end}}{{end}}
-    {{if .RecordProblem}}<p class="muted">Jobs delivered since the last refresh may be missing: {{.RecordProblem}}.</p>{{end}}
     {{if .Unpriced}}<p class="muted">{{commaInt .Unpriced}} items have no Jita sell price yet; values marked * leave them out.</p>{{end}}
 
     <div class="table-wrap">

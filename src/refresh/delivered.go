@@ -12,7 +12,8 @@ import (
 
 // RecordDeliveries copies every delivered manufacturing and reaction job in
 // industry_jobs into delivered_jobs, with how many items it made, then
-// prices the items of every job that has no price yet.
+// prices the items of every job that has no price yet from the saved Jita
+// prices.
 func (r *Refresher) RecordDeliveries(ctx context.Context) error {
 	if err := r.recordNewDeliveries(ctx); err != nil {
 		return err
@@ -62,11 +63,11 @@ func (r *Refresher) recordNewDeliveries(ctx context.Context) error {
 	return db.SaveDeliveredJobs(ctx, recorded)
 }
 
-// priceDeliveries values each unpriced job's items at their Jita sell price
-// on the day it was delivered, saving today's price of each first. A day
-// with no saved price uses the closest day that has one, so jobs delivered
-// before prices were saved take the earliest price. Items nobody sells in
-// Jita stay unpriced and are tried again next time.
+// priceDeliveries values each unpriced job's items at their saved Jita sell
+// price on the day it was delivered, or the closest day with a saved price,
+// so jobs delivered before prices were saved take the earliest one. It reads
+// only the database; the hourly refresh saves the prices. Items nobody sells
+// in Jita stay unpriced and are tried again next time.
 func (r *Refresher) priceDeliveries(ctx context.Context) error {
 	jobs, err := db.LoadUnpricedDeliveries(ctx)
 	if err != nil || len(jobs) == 0 {
@@ -77,9 +78,6 @@ func (r *Refresher) priceDeliveries(ctx context.Context) error {
 		if !slices.Contains(productIDs, job.ProductTypeID) {
 			productIDs = append(productIDs, job.ProductTypeID)
 		}
-	}
-	if err := r.SaveJitaPrices(ctx, productIDs, true); err != nil {
-		log.Printf("refresh: today's Jita prices of delivered items: %v", err)
 	}
 	book, err := db.LoadJitaSellPrices(ctx, productIDs)
 	if err != nil {

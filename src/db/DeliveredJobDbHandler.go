@@ -104,6 +104,19 @@ func SetDeliveryPrices(ctx context.Context, unitPrices map[int64]float64) error 
 	return sendBatch(ctx, batch)
 }
 
+// LoadDeliveredProductIDs returns every item type any recorded job made.
+func LoadDeliveredProductIDs(ctx context.Context) ([]int64, error) {
+	conn, err := connectDB()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := conn.Query(ctx, `SELECT DISTINCT product_type_id FROM lifetime_indy.delivered_jobs`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int64])
+}
+
 // ProductTotal is how many of one item a user's characters have made and
 // what they were worth when delivered.
 type ProductTotal struct {

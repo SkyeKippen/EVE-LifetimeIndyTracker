@@ -24,7 +24,8 @@ func TestParseTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 || *got[1230].Volume != 0.1 || got[1230].GroupID != 462 || got[5].Volume != nil {
+	if len(got) != 3 || *got[1230].Volume != 0.1 || got[1230].GroupID != 462 || got[5].Volume != nil ||
+		got[1230].Name != "Veldspar" || got[1230].PortionSize != 100 {
 		t.Errorf("got %v", got)
 	}
 }
